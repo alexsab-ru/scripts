@@ -1,14 +1,16 @@
 # scripts
 our libs for website
 
-## Install
+## Install and update
 ```bash
-pnpm i git+ssh://github.com/alexsab-ru/scripts
+pnpm i https://github.com/alexsab-ru/scripts
 ```
 
-## Передача событий Analytics.js
+### Send goals Analytics.js
 
 ```js
+import '/node_modules/scripts/js/analytics.js';
+
 window.WebsiteAnalytics.dataLayer("phone-click");
 window.WebsiteAnalytics.dataLayer("phone-copy");
 window.WebsiteAnalytics.dataLayer("phone-contextmenu");
@@ -23,12 +25,12 @@ window.WebsiteAnalytics.dataLayer("form-submit");
 window.WebsiteAnalytics.dataLayer("form-error");
 ```
 
-Вставляем на этапе обработки формы
+Insert before send
 ```js
 var formDataObj = window.WebsiteAnalytics.getFormDataObject(formData, form.id);
 ```
 
-Вставляем где происходит событие Success
+Insert when Success callback
 ```js
 window.WebsiteAnalytics.dataLayer("form-success", formDataObj);
 ```
