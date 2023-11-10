@@ -1,5 +1,5 @@
 # scripts
-our libs for website
+common libs for our websites
 
 ## Install and update
 ```bash
