@@ -3,6 +3,7 @@ window.WebsiteAnalytics = (function() {
 	window.dataLayer = window.dataLayer || [];
 
 	function dataLayer(event, t = {}) {
+		console.log(event);
 		void 0 !== window.dataLayer && window.dataLayer.push({
 			event: event,
 			...t

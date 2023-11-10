@@ -1,6 +1,11 @@
 # scripts
 our libs for website
 
+## Install
+```bash
+pnpm i git+ssh://github.com/alexsab-ru/scripts
+```
+
 ## Передача событий Analytics.js
 
 ```js
