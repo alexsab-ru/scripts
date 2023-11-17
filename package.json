@@ -22,5 +22,8 @@
   "bugs": {
     "url": "https://github.com/alexsab-ru/scripts/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/alexsab-ru/scripts#readme"
 }
