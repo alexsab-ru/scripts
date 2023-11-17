@@ -1,5 +1,5 @@
 {
-  "name": "scripts",
+  "name": "@alexsab-ru/scripts",
   "version": "0.0.2",
   "description": "common libs for websites",
   "main": "index.js",
