@@ -1,36 +1,86 @@
-# scripts
-common libs for our websites
+# @alexsab-ru/scripts
 
-## Install and update
+common libs for websites
+
+## Installation
 ```bash
-pnpm i https://github.com/alexsab-ru/scripts
+pnpm i @alexsab-ru/scripts
 ```
 
-### Send goals Analytics.js
+## Analytics module
 
+`reachGoal` and `pageView` functions push to `dataLayer` some data with goal name
 ```js
-import '/node_modules/scripts/js/analytics.js';
-
-window.WebsiteAnalytics.dataLayer("phone-click");
-window.WebsiteAnalytics.dataLayer("phone-copy");
-window.WebsiteAnalytics.dataLayer("phone-contextmenu");
-window.WebsiteAnalytics.dataLayer("email-click");
-window.WebsiteAnalytics.dataLayer("email-copy");
-window.WebsiteAnalytics.dataLayer("email-contextmenu");
-window.WebsiteAnalytics.dataLayer("video-click");
-window.WebsiteAnalytics.dataLayer("form-open");
-window.WebsiteAnalytics.dataLayer("form-submit");
-window.WebsiteAnalytics.dataLayer("form-required");
-window.WebsiteAnalytics.dataLayer("form-submit");
-window.WebsiteAnalytics.dataLayer("form-error");
+reachGoal("goalName");
+pageView(goalName);
 ```
 
-Insert before send
+In GTM you can use them for send goals to your analytic system
+
 ```js
-var formDataObj = window.WebsiteAnalytics.getFormDataObject(formData, form.id);
+{
+	event: "reachGoal-goalName",
+	eventAction: "goalName"
+}
 ```
 
-Insert when Success callback
+Use example:
+
 ```js
-window.WebsiteAnalytics.dataLayer("form-success", formDataObj);
+import { reachGoal } from '@alexsab-ru/scripts';
+
+// automatic assign from module
+reachGoal("phone_click");
+reachGoal("phone_copy");
+reachGoal("phone_contextmenu");
+reachGoal("email_click");
+reachGoal("email_copy");
+reachGoal("email_contextmenu");
+```
+
+For form's analytics you may use these goals
+
+```js
+reachGoal("form_open");
+reachGoal("form_click"); // automatic assign from module
+reachGoal("form_change"); // automatic assign from module
+reachGoal("form_submit");
+reachGoal("form_required");
+reachGoal("form_error");
+reachGoal("form_success");
+```
+
+`getFormDataObject` is needed for Calltouch request tag.
+
+```js
+import { getFormDataObject } from '@alexsab-ru/scripts';
+
+document.querySelectorAll("form").forEach((form) => {
+	form.onsubmit = async (event) => {
+
+		var formData = new FormData(form);
+		// ...
+		var formDataObj = getFormDataObject(formData, form.id);
+
+		await fetch("https://example.com/api/lead/", {
+			// ...
+		})
+			.then((res) => res.json())
+			.then((data) => {
+				if (data.answer == "required") {
+					reachGoal("form_required");
+					return;
+				} else if (data.answer == "error") {
+					reachGoal("form_error");
+					return;
+				} else {
+					reachGoal("form_success", formDataObj);
+				}
+				form.reset();
+			})
+			.catch((error) => {
+				reachGoal("form_error");
+			});
+	};
+});
 ```
