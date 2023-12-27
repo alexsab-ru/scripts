@@ -2,6 +2,12 @@
 
 common libs for websites
 
+* [Installation](#Installation)
+* [Analytics module](#analytics-module)
+* [Cookie module](#cookie-module)
+* [Calltouch module](#calltouch-module)
+* [Form module](#form-module)
+
 ## Installation
 ```bash
 pnpm i @alexsab-ru/scripts
@@ -82,5 +88,39 @@ document.querySelectorAll("form").forEach((form) => {
 				reachGoal("form_error");
 			});
 	};
+});
+```
+
+## Cookie module
+
+```js
+import { getCookie, setCookie, deleteCookie, cookiecook } from './cookie';
+
+getCookie('cookie_name');
+setCookie('cookie_name');
+deleteCookie('cookie_name');
+cookiecook(days);
+```
+
+## Calltouch module
+
+```js
+import { createRequest } from '@alexsab-ru/scripts';
+
+// Отправка заявки на обратный возов в CallTouch
+createRequest("ct_callback", "+7 (987) 654-32-10");
+
+// для показа лога нужно использовать третий парамтер
+createRequest("ct_callback", "+7 (987) 654-32-10", true);
+```
+
+## Form module
+
+```js
+import { connectForms, cookiecook } from '@alexsab-ru/scripts';
+
+cookiecook();
+connectForms('https://alexsab.ru/lead/test/', function() {
+	console.log("sucess lead");
 });
 ```
