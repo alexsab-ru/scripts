@@ -1,6 +1,6 @@
 {
   "name": "@alexsab-ru/scripts",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "common libs for websites",
   "main": "index.js",
   "scripts": {
