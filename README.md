@@ -1,5 +1,7 @@
 # @alexsab-ru/scripts
 
+[Русский](README_RU.md)
+
 common libs for websites
 
 * [Installation](#Installation)
@@ -91,6 +93,32 @@ document.querySelectorAll("form").forEach((form) => {
 });
 ```
 
+### Goals can be achieved as follows
+
+Interaction with the form
+
+- **form_open** – opened the form  
+- **form_click** – clicked on the form  
+- **form_change** – changes in the form  
+- **form_submit** – pressed the Submit button  
+- **form_required** – incomplete form filling  
+- **form_error** – error, data did not send for some reason  
+- **form_success** – received a positive response from the server, i.e., data was sent  
+- **form_close** – closed the form  
+
+Interaction with the phone
+
+- **phone_click** — clicked on it with the mouse  
+- **phone_contextmenu** — opening the context menu on it with the right mouse button  
+- **phone_copy** — copying the selected text  
+
+If there is a clickable email on the page, goals will be triggered on it
+
+- **email_click** — clicked on it with the mouse  
+- **email_contextmenu** — opening the context menu on it with the right mouse button  
+- **email_copy** — copying the selected text  
+
+
 ## Cookie module
 
 ```js
@@ -107,10 +135,10 @@ cookiecook(days);
 ```js
 import { createRequest } from '@alexsab-ru/scripts';
 
-// Отправка заявки на обратный возов в CallTouch
+// Sending a callback request to CallTouch
 createRequest("ct_callback", "+7 (987) 654-32-10");
 
-// для показа лога нужно использовать третий парамтер
+// to display the log, the third parameter must be used
 createRequest("ct_callback", "+7 (987) 654-32-10", true);
 ```
 
