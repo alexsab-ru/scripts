@@ -25,5 +25,20 @@
   "publishConfig": {
     "access": "public"
   },
+  "exports": {
+    ".": "./index.js",
+    "./analytics": "./lib/analytics.js",
+    "./calltouch": "./lib/calltouch.js",
+    "./campaign": "./lib/campaign/index.js",
+    "./campaign/persist": "./lib/campaign/persist-campaign-data.js",
+    "./cookie": "./lib/cookie.js",
+    "./form": "./lib/form.js"
+  },
+  "typesVersions": {
+    "*": {
+      "campaign": ["./lib/campaign/types.d.ts"],
+      "campaign/persist": ["./lib/campaign/types.d.ts"]
+    }
+  },
   "homepage": "https://github.com/alexsab-ru/scripts#readme"
 }
