@@ -1,6 +1,6 @@
 {
   "name": "@alexsab-ru/scripts",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "common libs for websites",
   "main": "index.js",
   "scripts": {
@@ -36,8 +36,12 @@
   },
   "typesVersions": {
     "*": {
-      "campaign": ["./lib/campaign/types.d.ts"],
-      "campaign/persist": ["./lib/campaign/types.d.ts"]
+      "campaign": [
+        "./lib/campaign/types.d.ts"
+      ],
+      "campaign/persist": [
+        "./lib/campaign/types.d.ts"
+      ]
     }
   },
   "homepage": "https://github.com/alexsab-ru/scripts#readme"
