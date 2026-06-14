@@ -56,6 +56,7 @@ reachGoal("form_submit");
 reachGoal("form_required");
 reachGoal("form_error");
 reachGoal("form_success");
+reachGoal("form_attention");
 ```
 
 `getFormDataObject` нужна для отслеживания заявок в Calltouch
@@ -82,7 +83,11 @@ document.querySelectorAll("form").forEach((form) => {
 					reachGoal("form_error");
 					return;
 				} else {
-					reachGoal("form_success", formDataObj);
+					if (data.attention === true) {
+						reachGoal("form_attention");
+					} else {
+						reachGoal("form_success", formDataObj);
+					}
 				}
 				form.reset();
 			})
@@ -104,6 +109,7 @@ document.querySelectorAll("form").forEach((form) => {
 - **form_required** – не полное заполнение формы  
 - **form_error** – ошибка, данные по какой-то причине не отправились  
 - **form_success** – получит положительный ответ от сервера, т.е. данные отправились  
+- **form_attention** – сервер пометил заявку как подозрительную (антиспам), success не отправляется  
 - **form_close** – закрыл форму  
 
 Взаимодейтсвие с телефоном

@@ -56,6 +56,7 @@ reachGoal("form_submit");
 reachGoal("form_required");
 reachGoal("form_error");
 reachGoal("form_success");
+reachGoal("form_attention");
 ```
 
 `getFormDataObject` is needed for Calltouch request tag.
@@ -82,7 +83,11 @@ document.querySelectorAll("form").forEach((form) => {
 					reachGoal("form_error");
 					return;
 				} else {
-					reachGoal("form_success", formDataObj);
+					if (data.attention === true) {
+						reachGoal("form_attention");
+					} else {
+						reachGoal("form_success", formDataObj);
+					}
 				}
 				form.reset();
 			})
@@ -104,6 +109,7 @@ Interaction with the form
 - **form_required** – incomplete form filling  
 - **form_error** – error, data did not send for some reason  
 - **form_success** – received a positive response from the server, i.e., data was sent  
+- **form_attention** – server flagged the submission as suspicious (antispam), success goal is skipped  
 - **form_close** – closed the form  
 
 Interaction with the phone
