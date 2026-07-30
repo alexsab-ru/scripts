@@ -7,13 +7,20 @@ const source = await readFile(
 	'utf8',
 );
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const { resolveFormSuccessAnalytics } = await import(moduleUrl);
+const { resolveFormSuccessAnalytics, CALLBACK_LEAD_CATEGORY } = await import(moduleUrl);
 
 const leadPayload = {
 	eventCategory: 'Lead',
 	eventProperties: {
 		phone: '79000000001',
 	},
+};
+
+// Подавление Lead API меняет только категорию: остальные поля обязаны доехать
+// до GA4, Метрики и GTM.
+const suppressed = {
+	...leadPayload,
+	eventCategory: CALLBACK_LEAD_CATEGORY,
 };
 
 test('suppresses Lead API after client callback success', () => {
@@ -25,7 +32,7 @@ test('suppresses Lead API after client callback success', () => {
 
 	assert.deepEqual(decision, {
 		goal: 'form_success',
-		payload: {},
+		payload: suppressed,
 		sendCalltouchLead: false,
 	});
 });
@@ -40,7 +47,7 @@ test('suppresses Lead API for confirmed server callback statuses', async (t) => 
 			});
 			assert.deepEqual(decision, {
 				goal: 'form_success',
-				payload: {},
+				payload: suppressed,
 				sendCalltouchLead: false,
 			});
 		});
@@ -97,8 +104,20 @@ test('never sends Lead API for an attention response', async (t) => {
 		});
 		assert.deepEqual(decision, {
 			goal: 'form_success',
-			payload: {},
+			payload: suppressed,
 			sendCalltouchLead: false,
 		});
 	});
+});
+
+test('suppression swaps only the category and never mutates the source', () => {
+	const decision = resolveFormSuccessAnalytics({
+		clientCallbackStatus: 'success',
+		leadPayload,
+	});
+
+	assert.equal(decision.payload.eventCategory, CALLBACK_LEAD_CATEGORY);
+	assert.notEqual(decision.payload.eventCategory, 'Lead');
+	assert.deepEqual(decision.payload.eventProperties, leadPayload.eventProperties);
+	assert.equal(leadPayload.eventCategory, 'Lead');
 });

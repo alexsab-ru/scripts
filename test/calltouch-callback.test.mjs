@@ -264,8 +264,8 @@ test('classifies documented business failures as rejected', { concurrency: false
 	}
 });
 
-test('classifies server and unknown failures as technical', { concurrency: false }, async (t) => {
-	for (const errorCode of ['server_error', 'unknown_error', 'another_error']) {
+test('classifies known transport failures as technical', { concurrency: false }, async (t) => {
+	for (const errorCode of ['server_error', 'unknown_error', 'network_error']) {
 		await t.test(errorCode, { concurrency: false }, async () => {
 			await withWindow({
 				ctw: workingGlobalCtw(({ callback }) => {
@@ -278,6 +278,28 @@ test('classifies server and unknown failures as technical', { concurrency: false
 					timeoutMs: 50,
 				});
 				assert.equal(result.status, 'technical_failure');
+				assert.equal(result.errorCode, errorCode);
+			});
+		});
+	}
+});
+
+// Незнакомый код не должен провоцировать серверный ретрай: сервер повторяет
+// попытку только на technical_failure.
+test('classifies unrecognized error codes as unknown', { concurrency: false }, async (t) => {
+	for (const errorCode of ['another_error', 'some_future_calltouch_code']) {
+		await t.test(errorCode, { concurrency: false }, async () => {
+			await withWindow({
+				ctw: workingGlobalCtw(({ callback }) => {
+					callback(false, { type: errorCode });
+				}),
+			}, async () => {
+				const result = await attemptCalltouchCallback({
+					routeKey: 'route-one',
+					phone: '79000000001',
+					timeoutMs: 50,
+				});
+				assert.equal(result.status, 'unknown');
 				assert.equal(result.errorCode, errorCode);
 			});
 		});
