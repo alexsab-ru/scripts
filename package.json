@@ -1,10 +1,10 @@
 {
   "name": "@alexsab-ru/scripts",
-  "version": "0.17.0",
+  "version": "0.17.2",
   "description": "common libs for websites",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
