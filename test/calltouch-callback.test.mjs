@@ -244,6 +244,7 @@ test('classifies documented business failures as rejected', { concurrency: false
 		'request_throttle_timeout',
 		'request_throttle_count',
 		'request_phone_blacklisted',
+		'request_widget_not_found',
 		'validation_error',
 	]) {
 		await t.test(errorCode, { concurrency: false }, async () => {

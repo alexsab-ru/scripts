@@ -21,6 +21,7 @@ const leadPayload = {
 const suppressed = {
 	...leadPayload,
 	eventCategory: CALLBACK_LEAD_CATEGORY,
+	sendCalltouchLead: false,
 };
 
 test('suppresses Lead API after client callback success', () => {
@@ -118,6 +119,7 @@ test('suppression swaps only the category and never mutates the source', () => {
 
 	assert.equal(decision.payload.eventCategory, CALLBACK_LEAD_CATEGORY);
 	assert.notEqual(decision.payload.eventCategory, 'Lead');
+	assert.equal(decision.payload.sendCalltouchLead, false);
 	assert.deepEqual(decision.payload.eventProperties, leadPayload.eventProperties);
 	assert.equal(leadPayload.eventCategory, 'Lead');
 });
