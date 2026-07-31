@@ -66,7 +66,7 @@ test('non-GTM Calltouch sender honors the explicit false flag', async () => {
 	}
 });
 
-test('GTM dataLayer receives the callback suppression flag and full payload', async () => {
+test('GTM dataLayer receives the callback payload without decision fields', async () => {
 	globalThis.__sentCalltouchPayloads = [];
 	globalThis.window = {
 		calltouch_params: {
@@ -85,13 +85,12 @@ test('GTM dataLayer receives the callback suppression flag and full payload', as
 			eventProperties: {
 				phone: '79000000001',
 			},
-			sendCalltouchLead: false,
 			sourceName: 'page',
 		});
 		const event = window.dataLayer.at(-1);
 		assert.equal(event.event, 'reachGoal-form_success');
 		assert.equal(event.eventCategory, 'CallbackLead');
-		assert.equal(event.sendCalltouchLead, false);
+		assert.equal('sendCalltouchLead' in event, false);
 		assert.equal(event.sourceName, 'page');
 		assert.equal(event.eventProperties.phone, '79000000001');
 		assert.equal(globalThis.__sentCalltouchPayloads.length, 0);

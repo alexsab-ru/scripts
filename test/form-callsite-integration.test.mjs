@@ -6,6 +6,11 @@ const toModuleUrl = (source) => {
 	return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 };
 
+const packageMetadata = JSON.parse(await readFile(
+	new URL('../package.json', import.meta.url),
+	'utf8',
+));
+
 const cookieModuleUrl = toModuleUrl(`
 	export const getCookie = () => null;
 	export const setCookie = () => {};
@@ -27,9 +32,15 @@ const calltouchModuleUrl = toModuleUrl(`
 	});
 	export const appendCalltouchResultToFormData = (formData, result) => {
 		formData.append('ct_callback_status', result.status);
+		formData.append('ct_callback_error_code', result.errorCode);
 		formData.append('ct_callback_id', result.callbackRequestId);
+		formData.append('ct_callback_source', result.source);
+		formData.append('ct_submission_id', result.submissionId);
 		formData.append('ct_session_id', result.sessionId);
-		formData.append('ct_callback', 'true');
+		formData.append('ct_route_key', result.routeKey);
+		formData.append('ct_mod_id', result.modId);
+		formData.append('ct_site_id', result.siteId);
+		formData.append('ct_client_version', ${JSON.stringify(packageMetadata.version)});
 	};
 `);
 
@@ -40,6 +51,9 @@ const analyticsModuleUrl = toModuleUrl(`
 	export const getFormDataObject = (formData, formId) => {
 		const eventProperties = {};
 		formData.forEach((value, key) => {
+			if (key === 'ct_client_version') {
+				return;
+			}
 			eventProperties[key] = value;
 		});
 		eventProperties.formID = formId;
@@ -179,16 +193,19 @@ test('connectForms keeps the complete payload after client callback success', as
 			return selector === 'form:not(.vue-form)' ? [form] : [];
 		},
 	};
-	globalThis.fetch = async () => ({
-		async text() {
-			return JSON.stringify({
-				answer: 'ok',
-				calltouch_callback: {
-					status: 'client_success',
-				},
-			});
-		},
-	});
+	globalThis.fetch = async (url, options) => {
+		globalThis.__formRequest = { url, options };
+		return {
+			async text() {
+				return JSON.stringify({
+					answer: 'ok',
+					calltouch_callback: {
+						status: 'client_success',
+					},
+				});
+			},
+		};
+	};
 
 	try {
 		const { connectForms } = await import(toModuleUrl(instrumentedFormSource));
@@ -206,16 +223,26 @@ test('connectForms keeps the complete payload after client callback success', as
 		);
 		assert.ok(successGoal);
 		assert.equal(successGoal.payload.eventCategory, 'CallbackLead');
-		assert.equal(successGoal.payload.sendCalltouchLead, false);
+		assert.equal('sendCalltouchLead' in successGoal.payload, false);
 		assert.equal(successGoal.payload.sourceName, 'page');
 		assert.equal(successGoal.payload.siteId, 'site-one');
 		assert.equal(successGoal.payload.eventProperties.phone, '+7 900 000-00-01');
 		assert.equal(successGoal.payload.eventProperties.name, 'Иван');
 		assert.equal(successGoal.payload.eventProperties.utm_source, 'integration-test');
 		assert.equal(successGoal.payload.eventProperties.ct_callback_status, 'success');
+		assert.equal(successGoal.payload.eventProperties.ct_callback_source, 'client');
+		assert.equal('ct_client_version' in successGoal.payload.eventProperties, false);
 		assert.equal(successGoal.payload.eventProperties.formID, 'callback-form');
+
+		const wirePayload = globalThis.__formRequest.options.body;
+		assert.equal(wirePayload.get('ct_callback'), null);
+		assert.equal(wirePayload.get('ct_callback_status'), 'success');
+		assert.equal(wirePayload.get('ct_callback_id'), 'callback-one');
+		assert.equal(wirePayload.get('ct_callback_source'), 'client');
+		assert.equal(wirePayload.get('ct_client_version'), packageMetadata.version);
 	} finally {
 		delete globalThis.__formGoalCalls;
+		delete globalThis.__formRequest;
 		globalThis.document = previousGlobals.document;
 		globalThis.fetch = previousGlobals.fetch;
 		globalThis.FormData = previousGlobals.FormData;

@@ -139,7 +139,11 @@ cookiecook(days);
 ## Calltouch module
 
 ```js
-import { createRequest } from '@alexsab-ru/scripts';
+import {
+	appendCalltouchResultToFormData,
+	attemptCalltouchCallback,
+	createRequest,
+} from '@alexsab-ru/scripts';
 
 // Sending a callback request to CallTouch
 createRequest("ct_callback", "+7 (987) 654-32-10");
@@ -147,6 +151,29 @@ createRequest("ct_callback", "+7 (987) 654-32-10");
 // to display the log, the third parameter must be used
 createRequest("ct_callback", "+7 (987) 654-32-10", true);
 ```
+
+New forms should use the structured callback contract:
+
+```js
+const callbackResult = await attemptCalltouchCallback({
+	routeKey: 'dealer-route-key',
+	phone: '+7 (987) 654-32-10',
+});
+
+appendCalltouchResultToFormData(formData, callbackResult);
+```
+
+The helper replaces user-provided `ct_*`/`ctw_*` fields and sends
+`ct_callback_status`, `ct_callback_error_code`, `ct_callback_id`,
+`ct_callback_source`, `ct_submission_id`, `ct_session_id`, `ct_route_key`,
+`ct_mod_id`, `ct_site_id`, and `ct_client_version` to the lead endpoint. It no
+longer sends the legacy `ct_callback=true` flag. `ct_client_version` is derived
+from the package version and is service-only telemetry: keep it in the server
+request/audit, not in lead messages or analytics event properties.
+
+After a callback is created, form analytics use `CallbackLead` to suppress a
+duplicate Calltouch Lead request. The internal `sendCalltouchLead` decision is
+not included in the analytics payload.
 
 ## Form module
 

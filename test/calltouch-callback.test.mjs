@@ -6,6 +6,14 @@ const toModuleUrl = (source) => {
 	return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 };
 
+const packageMetadata = JSON.parse(await readFile(
+	new URL('../package.json', import.meta.url),
+	'utf8',
+));
+const packageMetadataUrl = toModuleUrl(
+	`export default ${JSON.stringify(packageMetadata)};`,
+);
+
 const calltouchModuleSource = await readFile(
 	new URL('../lib/calltouch/calltouch-module.js', import.meta.url),
 	'utf8',
@@ -19,6 +27,9 @@ const callbackModule = await import(toModuleUrl(
 	callbackModuleSource.replace(
 		"'./calltouch-module.js'",
 		JSON.stringify(calltouchModuleUrl),
+	).replace(
+		"'../../package.json'",
+		JSON.stringify(packageMetadataUrl),
 	),
 ));
 const urlParamsModule = await import(toModuleUrl(await readFile(
@@ -29,6 +40,7 @@ const urlParamsModule = await import(toModuleUrl(await readFile(
 const {
 	appendCalltouchResultToFormData,
 	attemptCalltouchCallback,
+	CALLTOUCH_CLIENT_VERSION,
 	createRequest,
 	resolveCalltouchProject,
 } = callbackModule;
@@ -350,6 +362,7 @@ test('appends only the structured callback contract', () => {
 	formData.append('phone', '79000000001');
 	formData.append('ct_callback', 'attacker');
 	formData.append('ct_callback_status', 'attacker');
+	formData.append('ct_client_version', 'attacker');
 	formData.append('ct_secret_future_field', 'attacker');
 	formData.append('ctw_createRequest', '{"stack":"raw"}');
 
@@ -366,16 +379,44 @@ test('appends only the structured callback contract', () => {
 	});
 
 	assert.equal(formData.get('phone'), '79000000001');
-	assert.equal(formData.get('ct_callback'), 'true');
+	assert.equal(formData.has('ct_callback'), false);
 	assert.equal(formData.get('ct_callback_status'), 'success');
 	assert.equal(formData.get('ct_callback_id'), 'callback-one');
+	assert.equal(formData.get('ct_callback_source'), 'client');
 	assert.equal(formData.get('ct_submission_id'), 'submission-one');
 	assert.equal(formData.get('ct_session_id'), 'session-one');
 	assert.equal(formData.get('ct_route_key'), 'route-one');
 	assert.equal(formData.get('ct_mod_id'), 'mod-one');
 	assert.equal(formData.get('ct_site_id'), 'site-one');
+	assert.equal(formData.get('ct_client_version'), packageMetadata.version);
 	assert.equal(formData.has('ct_secret_future_field'), false);
 	assert.equal(formData.has('ctw_createRequest'), false);
+});
+
+test('derives the Calltouch wire version from package metadata', () => {
+	assert.equal(CALLTOUCH_CLIENT_VERSION, packageMetadata.version);
+});
+
+test('preserves a failed structured callback status without the legacy flag', () => {
+	const formData = new FormData();
+	appendCalltouchResultToFormData(formData, {
+		status: 'technical_failure',
+		errorCode: 'network_error',
+		callbackRequestId: '',
+		source: 'client',
+		submissionId: 'submission-two',
+		sessionId: '',
+		routeKey: 'route-two',
+		modId: 'mod-two',
+		siteId: 'site-two',
+	});
+
+	assert.equal(formData.get('ct_callback_status'), 'technical_failure');
+	assert.equal(formData.get('ct_callback_error_code'), 'network_error');
+	assert.equal(formData.get('ct_callback_source'), 'client');
+	assert.equal(formData.has('ct_callback_id'), false);
+	assert.equal(formData.has('ct_callback'), false);
+	assert.equal(formData.get('ct_client_version'), packageMetadata.version);
 });
 
 test('blocks current and future Calltouch service URL parameters', () => {
