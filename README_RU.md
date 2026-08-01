@@ -139,7 +139,11 @@ cookiecook(days);
 ## Модуль Calltouch
 
 ```js
-import { createRequest } from '@alexsab-ru/scripts';
+import {
+	appendCalltouchResultToFormData,
+	attemptCalltouchCallback,
+	createRequest,
+} from '@alexsab-ru/scripts';
 
 // Отправка заявки на обратный возов в CallTouch
 createRequest("ct_callback", "+7 (987) 654-32-10");
@@ -147,6 +151,30 @@ createRequest("ct_callback", "+7 (987) 654-32-10");
 // для показа лога нужно использовать третий парамтер
 createRequest("ct_callback", "+7 (987) 654-32-10", true);
 ```
+
+Новые формы должны использовать структурированный callback-контракт:
+
+```js
+const callbackResult = await attemptCalltouchCallback({
+	routeKey: 'dealer-route-key',
+	phone: '+7 (987) 654-32-10',
+});
+
+appendCalltouchResultToFormData(formData, callbackResult);
+```
+
+Helper заменяет переданные пользователем поля `ct_*`/`ctw_*` и отправляет в
+lead endpoint `ct_callback_status`, `ct_callback_error_code`, `ct_callback_id`,
+`ct_callback_source`, `ct_submission_id`, `ct_session_id`, `ct_route_key`,
+`ct_mod_id`, `ct_site_id` и `ct_client_version`. Legacy-флаг
+`ct_callback=true` больше не отправляется. `ct_client_version` автоматически
+берётся из версии пакета и является только служебной телеметрией: поле должно
+оставаться в серверном запросе/audit и не попадать в сообщения о заявке или в
+event properties аналитики.
+
+После создания callback аналитика формы использует категорию `CallbackLead`,
+чтобы не создавать дублирующий Calltouch Lead. Внутреннее решение
+`sendCalltouchLead` в analytics payload не передаётся.
 
 ## Модуль для форм
 
