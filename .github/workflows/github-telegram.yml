@@ -11,7 +11,11 @@ on:
       - synchronize
   create: {}
   delete: {}
-  issues: {}
+  issues:
+    types:
+      - opened
+      - closed
+      - reopened
   workflow_call:
     inputs:
       additional-text:
@@ -147,13 +151,13 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+          TELEGRAM_TO_CREATE: ${{ secrets.TELEGRAM_TO_CREATE }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
           send_telegram_message \
             "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO" \
+            "$TELEGRAM_TO_CREATE" \
             "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
 
           added branch [${NEW_REF}](https://github.com/${REPO}/tree/${NEW_REF}) from [${MASTER_BRANCH}](https://github.com/${REPO}/tree/${MASTER_BRANCH})" \
@@ -215,7 +219,7 @@ jobs:
 
   delete:
 
-    if: ${{ github.event.master_branch == null && github.event.commits == null && github.event.pull_request == null && inputs.additional-text == null }}
+    if: ${{ github.event.master_branch == null && github.event.commits == null && github.event.pull_request == null && inputs.additional-text == null && github.event.issue == null }}
 
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -234,16 +238,52 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+          TELEGRAM_TO_DELETE: ${{ secrets.TELEGRAM_TO_DELETE }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
           send_telegram_message \
             "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO" \
+            "$TELEGRAM_TO_DELETE" \
             "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
 
           branch '\`${DELETED_REF}\`' is deleted" \
+            "Markdown"
+
+  issues:
+
+    if: ${{ github.event.issue != null }}
+
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Send message to Telegram
+        env:
+          # Заголовок issue — произвольный пользовательский текст, включая
+          # обратные кавычки. Подставляем через env, а не в текст скрипта.
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_ACTION: ${{ github.event.action }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          ACTOR: ${{ github.actor }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO_ISSUES: ${{ secrets.TELEGRAM_TO_ISSUES }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+          send_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO_ISSUES" \
+            "*[${REPO_NAME}]* by [${ACTOR}](https://github.com/${ACTOR}):
+
+          issue #${ISSUE_NUMBER} [${ISSUE_TITLE}](https://github.com/${REPO}/issues/${ISSUE_NUMBER}) was ${ISSUE_ACTION}" \
             "Markdown"
 
   get_last_commit:
