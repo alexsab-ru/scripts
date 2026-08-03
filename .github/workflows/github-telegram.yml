@@ -185,7 +185,7 @@ jobs:
           REPO_NAME: ${{ github.event.repository.name }}
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+          TELEGRAM_TO_PULL_REQUEST: ${{ secrets.TELEGRAM_TO_PULL_REQUEST }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
@@ -210,7 +210,7 @@ jobs:
 
           send_rich_telegram_message \
             "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO" \
+            "$TELEGRAM_TO_PULL_REQUEST" \
             "$markdown"
 
   delete:
