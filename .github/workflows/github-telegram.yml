@@ -26,6 +26,14 @@ on:
         description: 'Telegram token passed from the caller workflow'
         required: true
 
+# Отправка идёт своими скриптами (.github/scripts/sh/), без сторонних actions:
+# нужен только curl и jq, оба есть на ubuntu-раннерах.
+#
+# Данные события (сообщения коммитов, тело и заголовок PR, имена веток) передаются
+# в шаги через env, а НЕ через ${{ }} внутри run. При прямой подстановке GitHub
+# вставляет текст прямо в исходник скрипта, и обратные кавычки в нём выполняются
+# шеллом как подстановка команд.
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a job called "build" adn "log-github-event-goodies"
@@ -48,15 +56,18 @@ jobs:
 
       - name: Work with commits
         id: with_commits
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_SHA: ${{ github.sha }}
         run: |
-          if [ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]; then
+          if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
             git fetch origin HEAD
             git checkout HEAD
-            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" HEAD..${{ github.sha }})
-            echo "before=${{ github.sha }}" >> $GITHUB_OUTPUT
+            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" HEAD.."$EVENT_SHA")
+            echo "before=$EVENT_SHA" >> $GITHUB_OUTPUT
           else
-            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" ${{ github.event.before }}..${{ github.sha }})
-            echo "before=${{ github.event.before }}..${{ github.sha }}" >> $GITHUB_OUTPUT
+            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" "$EVENT_BEFORE".."$EVENT_SHA")
+            echo "before=$EVENT_BEFORE..$EVENT_SHA" >> $GITHUB_OUTPUT
           fi
 
           # Process each commit
@@ -76,29 +87,41 @@ jobs:
 
       - name: Set outputs
         id: set_outputs
-        # The part of this solution to focus on is that we’re substituting the %, \n, and \r characters
+        env:
+          ADDITIONAL_TEXT: ${{ inputs.additional-text || '' }}
         run: |
-          additional_text="${{ inputs.additional-text || '' }}"
-          if [ "$additional_text" != "" ]; then
+          if [ "$ADDITIONAL_TEXT" != "" ]; then
             echo "additional_text<<EOF" >> $GITHUB_OUTPUT
             echo "" >> $GITHUB_OUTPUT
-            echo $additional_text >> $GITHUB_OUTPUT
+            echo "$ADDITIONAL_TEXT" >> $GITHUB_OUTPUT
             echo "" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
       - name: Send message to Telegram
         if: ${{ steps.with_commits.outputs.full_list != '' }}
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          disable_web_page_preview: true
-          format: html
-          message: |
-            <b>[${{ github.event.repository.name }}:${{ github.ref_name }}]</b> <b><a href="https://github.com/${{ github.repository }}/compare/${{ steps.with_commits.outputs.before }}">${{ steps.with_commits.outputs.lines_count }}</a></b> by <b><a href="https://github.com/${{ github.actor }}">${{ github.actor }}</a></b>
-            ${{ steps.set_outputs.outputs.additional_text }}
-            ${{ steps.with_commits.outputs.full_list }}
+        env:
+          # Сообщения коммитов — пользовательский текст, поэтому только через env.
+          COMMITS_LIST: ${{ steps.with_commits.outputs.full_list }}
+          ADDITIONAL_TEXT: ${{ steps.set_outputs.outputs.additional_text }}
+          COMPARE_RANGE: ${{ steps.with_commits.outputs.before }}
+          LINES_COUNT: ${{ steps.with_commits.outputs.lines_count }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+          send_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO" \
+            "<b>[${REPO_NAME}:${REF_NAME}]</b> <b><a href=\"https://github.com/${REPO}/compare/${COMPARE_RANGE}\">${LINES_COUNT}</a></b> by <b><a href=\"https://github.com/${ACTOR}\">${ACTOR}</a></b>
+          ${ADDITIONAL_TEXT}
+          ${COMMITS_LIST}" \
+            "HTML"
 
 
   create:
@@ -111,17 +134,30 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
 
-      - name: Send message to Telegram
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          disable_web_page_preview: true
-          format: markdown
-          message: |
-            *[${{ github.event.repository.name }}:${{ github.ref_name }}]* by *${{ github.actor }}*:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            added branch [${{ github.event.ref }}](https://github.com/${{ github.repository }}/tree/${{ github.event.ref }}) from [${{ github.event.master_branch }}](https://github.com/${{ github.repository }}/tree/${{ github.event.master_branch }})
+      - name: Send message to Telegram
+        env:
+          # Имя ветки — пользовательский ввод: git разрешает в нём обратные кавычки.
+          NEW_REF: ${{ github.event.ref }}
+          MASTER_BRANCH: ${{ github.event.master_branch }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+          send_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO" \
+            "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
+
+          added branch [${NEW_REF}](https://github.com/${REPO}/tree/${NEW_REF}) from [${MASTER_BRANCH}](https://github.com/${REPO}/tree/${MASTER_BRANCH})" \
+            "Markdown"
 
   pull_request:
 
@@ -133,18 +169,49 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
 
-      - name: Send message to Telegram
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          disable_web_page_preview: true
-          format: markdown
-          message: |
-            *[${{ github.event.repository.name }}:${{ github.ref_name }}]* by *${{ github.actor }}*:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            pull request from [${{ github.event.pull_request.head.ref }}](https://github.com/${{ github.repository }}/tree/${{ github.event.head.ref }}) to [${{ github.event.pull_request.base.ref }}](https://github.com/${{ github.repository }}/tree/${{ github.event.base.ref }}) with comment:
-            ${{ github.event.pull_request.body }}
+      - name: Send message to Telegram
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          ACTOR: ${{ github.actor }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+
+          action="$PR_ACTION"
+          if [ "$PR_ACTION" = "closed" ] && [ "$PR_MERGED" = "true" ]; then
+            action="merged"
+          fi
+
+          # Описание PR уходит в rich_message.markdown как GitHub Flavored Markdown:
+          # таблицы, списки и inline-код не требуют экранирования и не дают ошибок
+          # "can't parse entities", в отличие от sendMessage с parse_mode=Markdown.
+          markdown="## ${REPO_NAME}: pull request #${PR_NUMBER} ${action}
+
+          [**${PR_TITLE}**](https://github.com/${REPO}/pull/${PR_NUMBER})
+
+          by [@${ACTOR}](https://github.com/${ACTOR}) · [\`${HEAD_REF}\`](https://github.com/${REPO}/tree/${HEAD_REF}) → [\`${BASE_REF}\`](https://github.com/${REPO}/tree/${BASE_REF})
+
+          ---
+
+          ${PR_BODY}"
+
+          send_rich_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO" \
+            "$markdown"
 
   delete:
 
@@ -156,17 +223,28 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
 
-      - name: Send message to Telegram
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          disable_web_page_preview: true
-          format: markdown
-          message: |
-            *[${{ github.event.repository.name }}:${{ github.ref_name }}]* by *${{ github.actor }}*:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            branch '`${{ github.event.ref }}`' is deleted
+      - name: Send message to Telegram
+        env:
+          # Имя ветки может содержать обратные кавычки — только через env.
+          DELETED_REF: ${{ github.event.ref }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+          send_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO" \
+            "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
+
+          branch '\`${DELETED_REF}\`' is deleted" \
+            "Markdown"
 
   get_last_commit:
     if: ${{ inputs.additional-text != null }}
@@ -190,29 +268,40 @@ jobs:
 
       - name: Set outputs
         id: set_outputs
-        # The part of this solution to focus on is that we’re substituting the %, \n, and \r characters
+        env:
+          ADDITIONAL_TEXT: ${{ inputs.additional-text || '' }}
         run: |
-          additional_text="${{ inputs.additional-text || '' }}"
-          if [ "$additional_text" != "" ]; then
+          if [ "$ADDITIONAL_TEXT" != "" ]; then
             echo "additional_text<<EOF" >> $GITHUB_OUTPUT
             echo "" >> $GITHUB_OUTPUT
-            echo $additional_text >> $GITHUB_OUTPUT
+            echo "$ADDITIONAL_TEXT" >> $GITHUB_OUTPUT
             echo "" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
       - name: Send message to Telegram
         if: ${{ steps.get_commits.outputs.hash != '' }}
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          disable_web_page_preview: true
-          format: html
-          message: |
-            <b>[${{ github.event.repository.name }}:${{ github.ref_name }}]</b> <b><a href="https://github.com/${{ github.repository }}/commit/${{ steps.get_commits.outputs.hash }}">Last commit</a></b> by <b>${{ steps.get_commits.outputs.author }}</b>
-            ${{ steps.set_outputs.outputs.additional_text }}
-            ${{ steps.get_commits.outputs.message }}
+        env:
+          # Сообщение и автор коммита — пользовательский текст, только через env.
+          COMMIT_MESSAGE: ${{ steps.get_commits.outputs.message }}
+          COMMIT_AUTHOR: ${{ steps.get_commits.outputs.author }}
+          COMMIT_HASH: ${{ steps.get_commits.outputs.hash }}
+          ADDITIONAL_TEXT: ${{ steps.set_outputs.outputs.additional_text }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REF_NAME: ${{ github.ref_name }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+        run: |
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/send_telegram.sh
+          send_telegram_message \
+            "$TELEGRAM_TOKEN" \
+            "$TELEGRAM_TO" \
+            "<b>[${REPO_NAME}:${REF_NAME}]</b> <b><a href=\"https://github.com/${REPO}/commit/${COMMIT_HASH}\">Last commit</a></b> by <b>${COMMIT_AUTHOR}</b>
+          ${ADDITIONAL_TEXT}
+          ${COMMIT_MESSAGE}" \
+            "HTML"
 
 
   # log-github-event-goodies:
