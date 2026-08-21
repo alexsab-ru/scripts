@@ -323,3 +323,81 @@ test('connectForms emits one privacy-safe form_required for blocked client submi
 		globalThis.window = previousGlobals.window;
 	}
 });
+
+test('connectForms categorizes a lead network failure without exposing error details', async () => {
+	const previousGlobals = {
+		document: globalThis.document,
+		fetch: globalThis.fetch,
+		FormData: globalThis.FormData,
+		window: globalThis.window,
+	};
+	const listeners = {};
+	const button = {
+		tagName: 'BUTTON',
+		innerText: 'Отправить',
+		setAttribute() {},
+		removeAttribute() {},
+	};
+	const form = {
+		id: 'network-form',
+		fields: { phone: '+7 900 000-00-01' },
+		addEventListener(event, callback) {
+			listeners[event] = callback;
+		},
+		querySelector(selector) {
+			if (selector === '[type="submit"]') return button;
+			if (selector === '[name="phone"]') return { value: this.fields.phone };
+			return null;
+		},
+	};
+
+	globalThis.__formGoalCalls = [];
+	globalThis.FormData = FakeFormData;
+	globalThis.window = {
+		location: {
+			hostname: 'dev.alexsab.ru',
+			origin: 'https://dev.alexsab.ru',
+			pathname: '/',
+			search: '',
+		},
+	};
+	globalThis.document = {
+		getElementById() { return null; },
+		querySelectorAll(selector) {
+			return selector === 'form:not(.vue-form)' ? [form] : [];
+		},
+	};
+	globalThis.fetch = async () => {
+		throw new Error('private response body must not enter analytics');
+	};
+
+	try {
+		const { connectForms } = await import(toModuleUrl(instrumentedFormSource));
+		connectForms('/lead/', {
+			callback_error() {},
+			validation: () => true,
+		});
+		await listeners.submit({ preventDefault() {} });
+
+		const errorGoal = globalThis.__formGoalCalls.find(
+			(call) => call.goal === 'form_error',
+		);
+		assert.deepEqual(errorGoal, {
+			goal: 'form_error',
+			payload: {
+				eventProperties: {
+					errorSource: 'network',
+					errorStage: 'lead_request',
+					formID: 'network-form',
+				},
+			},
+		});
+		assert.equal(JSON.stringify(errorGoal).includes('private response body'), false);
+	} finally {
+		delete globalThis.__formGoalCalls;
+		globalThis.document = previousGlobals.document;
+		globalThis.fetch = previousGlobals.fetch;
+		globalThis.FormData = previousGlobals.FormData;
+		globalThis.window = previousGlobals.window;
+	}
+});
