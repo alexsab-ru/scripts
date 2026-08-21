@@ -174,7 +174,9 @@ event properties аналитики.
 
 После создания callback аналитика формы использует категорию `CallbackLead`,
 чтобы не создавать дублирующий Calltouch Lead. Внутреннее решение
-`sendCalltouchLead` в analytics payload не передаётся.
+`sendCalltouchLead` в analytics payload не передаётся. Поля клиента `name`/`fio`,
+`phone`, `email` и `comment` остаются в payload заявки/Calltouch, но удаляются
+из `eventProperties` перед отправкой события в GA4, GTM и Яндекс Метрику.
 
 ## Модуль для форм
 

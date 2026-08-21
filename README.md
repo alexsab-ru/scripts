@@ -173,7 +173,9 @@ request/audit, not in lead messages or analytics event properties.
 
 After a callback is created, form analytics use `CallbackLead` to suppress a
 duplicate Calltouch Lead request. The internal `sendCalltouchLead` decision is
-not included in the analytics payload.
+not included in the analytics payload. Customer `name`/`fio`, `phone`, `email`,
+and `comment` stay in the lead/Calltouch payload but are removed from
+`eventProperties` before GA4, GTM, or Yandex Metrika receives the event.
 
 ## Form module
 
