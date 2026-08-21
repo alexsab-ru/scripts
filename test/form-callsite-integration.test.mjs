@@ -75,6 +75,9 @@ const urlParamsSource = await readFile(
 	'utf8',
 );
 const urlParamsModuleUrl = toModuleUrl(urlParamsSource);
+const clientErrorReportModuleUrl = toModuleUrl(`
+	export const reportClientFormError = async () => true;
+`);
 
 const formSource = await readFile(
 	new URL('../lib/form.js', import.meta.url),
@@ -100,6 +103,10 @@ const instrumentedFormSource = formSource
 	.replace(
 		"from './form/url-params'",
 		`from ${JSON.stringify(urlParamsModuleUrl)}`,
+	)
+	.replace(
+		"from './form/client-error-report'",
+		`from ${JSON.stringify(clientErrorReportModuleUrl)}`,
 	);
 
 class FakeFormData {
