@@ -249,3 +249,77 @@ test('connectForms keeps the complete payload after client callback success', as
 		globalThis.window = previousGlobals.window;
 	}
 });
+
+test('connectForms emits one privacy-safe form_required for blocked client submit', async () => {
+	const previousGlobals = {
+		document: globalThis.document,
+		FormData: globalThis.FormData,
+		window: globalThis.window,
+	};
+	const listeners = {};
+	const form = {
+		id: 'required-form',
+		fields: {},
+		addEventListener(event, callback) {
+			listeners[event] = callback;
+		},
+		querySelector(selector) {
+			if (selector === '[type="submit"]') {
+				return {
+					tagName: 'BUTTON',
+					innerText: 'Отправить',
+					setAttribute() {},
+					removeAttribute() {},
+				};
+			}
+			return null;
+		},
+	};
+
+	globalThis.__formGoalCalls = [];
+	globalThis.FormData = FakeFormData;
+	globalThis.window = {
+		location: {
+			hostname: 'dev.alexsab.ru',
+			origin: 'https://dev.alexsab.ru',
+			pathname: '/',
+			search: '',
+		},
+	};
+	globalThis.document = {
+		getElementById() {
+			return null;
+		},
+		querySelectorAll(selector) {
+			return selector === 'form:not(.vue-form)' ? [form] : [];
+		},
+	};
+
+	try {
+		const { connectForms } = await import(toModuleUrl(instrumentedFormSource));
+		connectForms('/lead/', {
+			validation: () => ({
+				isValid: false,
+				invalidFields: ['phone', 'email'],
+			}),
+		});
+		await listeners.submit({ preventDefault() {} });
+
+		assert.deepEqual(globalThis.__formGoalCalls, [{
+			goal: 'form_required',
+			payload: {
+				eventProperties: {
+					validationSource: 'client',
+					formID: 'required-form',
+					invalidFields: 'phone,email',
+					invalidCount: 2,
+				},
+			},
+		}]);
+	} finally {
+		delete globalThis.__formGoalCalls;
+		globalThis.document = previousGlobals.document;
+		globalThis.FormData = previousGlobals.FormData;
+		globalThis.window = previousGlobals.window;
+	}
+});
