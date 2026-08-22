@@ -109,6 +109,40 @@ const instrumentedFormSource = formSource
 		`from ${JSON.stringify(clientErrorReportModuleUrl)}`,
 	);
 
+test('phoneChecker uses the same actionable format message as submit validation', async () => {
+	const previousDocument = globalThis.document;
+	const errorField = {
+		innerText: '',
+		classList: { remove() {} },
+	};
+	const form = {
+		querySelector(selector) {
+			return selector === '.phone' ? errorField : null;
+		},
+	};
+	const phone = {
+		value: '+7 12',
+		closest(selector) {
+			return selector === 'form' ? form : null;
+		},
+	};
+	globalThis.document = {
+		getElementById() { return null; },
+		querySelectorAll() { return []; },
+	};
+
+	try {
+		const { phoneChecker } = await import(toModuleUrl(instrumentedFormSource));
+		assert.equal(phoneChecker(phone), false);
+		assert.equal(
+			errorField.innerText,
+			'Укажите номер телефона в формате +7 999 999-99-99',
+		);
+	} finally {
+		globalThis.document = previousDocument;
+	}
+});
+
 class FakeFormData {
 	constructor(form) {
 		this.values = new Map(form ? Object.entries(form.fields) : []);
@@ -221,6 +255,7 @@ test('connectForms keeps the complete payload after client callback success', as
 			ct_routeKey: 'route-one',
 			validation: () => true,
 		});
+		assert.equal(form.noValidate, true);
 		await listeners.submit({
 			preventDefault() {},
 		});
