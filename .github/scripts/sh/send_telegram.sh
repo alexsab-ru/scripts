@@ -12,6 +12,9 @@ is_response_ok() {
     echo "$response" | grep -q '"ok":true'
 }
 
+# Telegram отвергает сообщение целиком, если разметка не сходится: непарные *, _, [
+# или обратные кавычки в пользовательском тексте. Такое сообщение лучше доставить
+# без форматирования, чем не доставить вовсе.
 should_retry_without_parse_mode() {
     local response="$1"
     local parse_mode="$2"
@@ -148,7 +151,16 @@ _…сообщение обрезано по лимиту Telegram_"
             # всё равно должно дойти, пусть и без форматирования.
             echo "Warning: sendRichMessage failed for chat $chat_id: $RESPONSE" >&2
             echo "Falling back to plain sendMessage without parse_mode" >&2
-            RESPONSE=$(post_telegram_message "$token" "$chat_id" "$markdown" "" "$message_thread_id")
+
+            local curl_args=(-sS -X POST "https://api.telegram.org/bot${token}/sendMessage"
+                --data-urlencode "chat_id=${chat_id}"
+                --data-urlencode "text=${markdown}"
+                --data-urlencode "disable_web_page_preview=true"
+            )
+            if [ -n "$message_thread_id" ]; then
+                curl_args+=(--data-urlencode "message_thread_id=${message_thread_id}")
+            fi
+            RESPONSE=$(curl "${curl_args[@]}")
 
             if ! is_response_ok "$RESPONSE"; then
                 echo "Error sending message to chat $chat_id: $RESPONSE" >&2
@@ -177,20 +189,22 @@ send_telegram_messages() {
         return 1
     fi
 
+    # Ненастроенный чат — это пробел в конфиге, а не сбой: предупреждаем и выходим,
+    # иначе весь job падает из-за незаданного секрета.
     if [ -z "$chat_ids" ]; then
         echo "Warning: TELEGRAM_TO (chat_ids) is empty, skipping Telegram messages send" >&2
         return 0
     fi
 
     # Проверяем, что parse_mode имеет допустимое значение
-    if [ -n "$parse_mode" ] && [[ ! "$parse_mode" =~ ^(HTML|Markdown|MarkdownV2)$ ]]; then
+    if [[ ! "$parse_mode" =~ ^(HTML|Markdown|MarkdownV2)$ ]]; then
         echo "Error: Invalid parse_mode. Must be one of: HTML, Markdown, MarkdownV2" >&2
         return 1
     fi
 
     # Разбиваем chat_ids по переносу строки
     while IFS= read -r chat_line; do
-        # Разбиваем строку по запятой
+        # Разбиваем строку по запятой или слешу
         IFS=',/' read -r chat_id message_thread_id <<< "$chat_line"
         
         for i in $(seq 0 $((total_parts - 1))); do
@@ -215,6 +229,51 @@ send_telegram_messages() {
     done <<< "$chat_ids"
 }
 
+send_telegram_file() {
+    local token=$(trim_quotes "$1")
+    local chat_ids=$(trim_quotes "$2")
+    local file_path=$(trim_quotes "$3")
+    local caption=$(trim_quotes "$4")
+
+    if [ -z "$token" ] || [ -z "$chat_ids" ] || [ -z "$file_path" ]; then
+        echo "Error: Missing required parameters" >&2
+        echo "Usage: send_telegram_file token chat_ids file_path [caption]" >&2
+        return 1
+    fi
+
+    if [ ! -f "$file_path" ]; then
+        echo "Error: File not found: $file_path" >&2
+        return 1
+    fi
+
+    while IFS= read -r chat_line; do
+        IFS=',/' read -r chat_id message_thread_id <<< "$chat_line"
+
+        echo -e "${BGGREEN}Sending file $(basename $file_path) to Telegram chat $chat_id${Color_Off}"
+
+        local curl_args=(-s -X POST "https://api.telegram.org/bot${token}/sendDocument"
+            -F "chat_id=${chat_id}"
+            -F "document=@${file_path}"
+        )
+
+        if [ -n "$caption" ]; then
+            curl_args+=(-F "caption=${caption}")
+        fi
+
+        if [ -n "$message_thread_id" ]; then
+            curl_args+=(-F "message_thread_id=${message_thread_id}")
+        fi
+
+        RESPONSE=$(curl "${curl_args[@]}")
+
+        if ! echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo "Error sending file to chat $chat_id: $RESPONSE" >&2
+        fi
+
+        sleep 1
+    done <<< "$chat_ids"
+}
+
 send_telegram_message() {
     # Очищаем входные параметры от кавычек
     local token=$(trim_quotes "$1")
@@ -233,20 +292,21 @@ send_telegram_message() {
         return 1
     fi
 
+    # Ненастроенный чат — пробел в конфиге, а не сбой (см. send_telegram_messages).
     if [ -z "$chat_ids" ]; then
         echo "Warning: TELEGRAM_TO (chat_ids) is empty, skipping Telegram message send" >&2
         return 0
     fi
 
     # Проверяем, что parse_mode имеет допустимое значение
-    if [ -n "$parse_mode" ] && [[ ! "$parse_mode" =~ ^(HTML|Markdown|MarkdownV2)$ ]]; then
+    if [[ ! "$parse_mode" =~ ^(HTML|Markdown|MarkdownV2)$ ]]; then
         echo "Error: Invalid parse_mode. Must be one of: HTML, Markdown, MarkdownV2" >&2
         return 1
     fi
 
     # Разбиваем chat_ids по переносу строки
     while IFS= read -r chat_line; do
-        # Разбиваем строку по запятой
+        # Разбиваем строку по запятой или слешу
         IFS=',/' read -r chat_id message_thread_id <<< "$chat_line"
         
         echo "Sending message to Telegram chat $chat_id"

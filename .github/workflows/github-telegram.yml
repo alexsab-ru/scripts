@@ -9,8 +9,10 @@ on:
     types:
       - opened
       - synchronize
-  create: {}
-  delete: {}
+      - closed
+      - reopened
+  create:
+  delete:
   issues:
     types:
       - opened
@@ -18,10 +20,25 @@ on:
       - reopened
   workflow_call:
     inputs:
+      caller-id:
+        description: 'Unique identifier for the caller to prevent concurrency conflicts'
+        required: false
+        type: string
+        default: 'default'
       additional-text:
         description: 'Additional text passed from the caller workflow'
         required: false
         type: string
+      parse-mode:
+        description: 'Telegram message parse mode (HTML, Markdown, or MarkdownV2)'
+        required: false
+        type: string
+        default: 'HTML'
+      include-header:
+        description: 'Whether to include header in the message'
+        required: false
+        type: boolean
+        default: true
     secrets:
       TELEGRAM_TO:
         description: 'Telegram ID passed from the caller workflow'
@@ -29,21 +46,23 @@ on:
       TELEGRAM_TOKEN:
         description: 'Telegram token passed from the caller workflow'
         required: true
+      TELEGRAM_THREAD_ID:
+        description: 'Telegram thread ID passed from the caller workflow'
+        required: false
 
-# Отправка идёт своими скриптами (.github/scripts/sh/), без сторонних actions:
-# нужен только curl и jq, оба есть на ubuntu-раннерах.
-#
-# Данные события (сообщения коммитов, тело и заголовок PR, имена веток) передаются
-# в шаги через env, а НЕ через ${{ }} внутри run. При прямой подстановке GitHub
-# вставляет текст прямо в исходник скрипта, и обратные кавычки в нём выполняются
-# шеллом как подстановка команд.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.caller-id || 'default' }}
+  cancel-in-progress: true
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a job called "build" adn "log-github-event-goodies"
   push:
 
-    if: ${{ github.event.commits != null }}
+    if: ${{ github.event.commits != null && inputs.additional-text == null }}
 
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -53,97 +72,55 @@ jobs:
 
       - name: Get commits
         id: get_commits
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # checkout full tree
           fetch-depth: 0
 
-      - name: Work with commits
-        id: with_commits
-        env:
-          EVENT_BEFORE: ${{ github.event.before }}
-          EVENT_SHA: ${{ github.sha }}
+      - name: Prepare commit messages
+        id: prepare
         run: |
-          if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
-            git fetch origin HEAD
-            git checkout HEAD
-            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" HEAD.."$EVENT_SHA")
-            echo "before=$EVENT_SHA" >> $GITHUB_OUTPUT
-          else
-            mapfile -t COMMITS_ARRAY < <(git log --pretty=format:"'<code>%h</code>' - %an, %ar : %s" "$EVENT_BEFORE".."$EVENT_SHA")
-            echo "before=$EVENT_BEFORE..$EVENT_SHA" >> $GITHUB_OUTPUT
-          fi
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/prepare_commits.sh
+          collect_commits \
+            "${{ github.event.repository.name }}" \
+            "${{ github.ref_name }}" \
+            "${{ github.event.before }}" \
+            "${{ github.sha }}" \
+            "${{ github.actor }}" \
+            "${{ github.repository }}"
+          total_parts=$(prepare_commits_message \
+            "${{ github.event.repository.name }}" \
+            "${{ github.ref_name }}" \
+            "${{ github.actor }}" \
+            "${{ github.repository }}" \
+            "${COMPARE_HASH}" \
+            "${{ inputs.include-header }}" \
+            "${COMMIT_ARRAY[@]}")
+          echo "total_parts=${total_parts}" >> $GITHUB_OUTPUT
 
-          # Process each commit
-          echo "full_list<<EOF" >> $GITHUB_OUTPUT
-          for COMMIT in "${COMMITS_ARRAY[@]}"; do
-            echo "$COMMIT" >> $GITHUB_OUTPUT
-          done
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          LINES_COUNT=${#COMMITS_ARRAY[*]}
-          if [ "$LINES_COUNT" == "1" ]; then
-            echo "lines_count=$LINES_COUNT new commit" >> $GITHUB_OUTPUT
-          else
-            echo "lines_count=$LINES_COUNT new commits" >> $GITHUB_OUTPUT
-          fi
-
-
-      - name: Set outputs
-        id: set_outputs
-        env:
-          ADDITIONAL_TEXT: ${{ inputs.additional-text || '' }}
-        run: |
-          if [ "$ADDITIONAL_TEXT" != "" ]; then
-            echo "additional_text<<EOF" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "$ADDITIONAL_TEXT" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Send message to Telegram
-        if: ${{ steps.with_commits.outputs.full_list != '' }}
-        env:
-          # Сообщения коммитов — пользовательский текст, поэтому только через env.
-          COMMITS_LIST: ${{ steps.with_commits.outputs.full_list }}
-          ADDITIONAL_TEXT: ${{ steps.set_outputs.outputs.additional_text }}
-          COMPARE_RANGE: ${{ steps.with_commits.outputs.before }}
-          LINES_COUNT: ${{ steps.with_commits.outputs.lines_count }}
-          REPO: ${{ github.repository }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          REF_NAME: ${{ github.ref_name }}
-          ACTOR: ${{ github.actor }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+      - name: Send messages to Telegram
+        if: ${{ steps.prepare.outputs.total_parts != '0' }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
-          send_telegram_message \
-            "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO" \
-            "<b>[${REPO_NAME}:${REF_NAME}]</b> <b><a href=\"https://github.com/${REPO}/compare/${COMPARE_RANGE}\">${LINES_COUNT}</a></b> by <b><a href=\"https://github.com/${ACTOR}\">${ACTOR}</a></b>
-          ${ADDITIONAL_TEXT}
-          ${COMMITS_LIST}" \
-            "HTML"
-
+          send_telegram_messages \
+            "${{ secrets.TELEGRAM_TOKEN }}" \
+            "${{ secrets.TELEGRAM_TO }}" \
+            "${{ steps.prepare.outputs.total_parts }}" \
+            "${{ inputs.parse-mode || 'HTML' }}"
 
   create:
-
     if: ${{ github.event.master_branch != null && github.event.commits == null }}
-
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Send message to Telegram
         env:
-          # Имя ветки — пользовательский ввод: git разрешает в нём обратные кавычки.
+          # Имя ветки — пользовательский ввод: git разрешает в нём обратные кавычки,
+          # поэтому подставляем через env, а не в текст скрипта (см. job pull_request).
           NEW_REF: ${{ github.event.ref }}
           MASTER_BRANCH: ${{ github.event.master_branch }}
           REPO: ${{ github.repository }}
@@ -152,32 +129,31 @@ jobs:
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_TO_CREATE: ${{ secrets.TELEGRAM_TO_CREATE }}
+          PARSE_MODE: ${{ inputs.parse-mode || 'Markdown' }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
           send_telegram_message \
-            "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO_CREATE" \
-            "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
+          "$TELEGRAM_TOKEN" \
+          "$TELEGRAM_TO_CREATE" \
+          "*[${REPO_NAME}:${REF_NAME}]* by [${ACTOR}](https://github.com/${ACTOR}):
 
           added branch [${NEW_REF}](https://github.com/${REPO}/tree/${NEW_REF}) from [${MASTER_BRANCH}](https://github.com/${REPO}/tree/${MASTER_BRANCH})" \
-            "Markdown"
+          "$PARSE_MODE"
 
   pull_request:
-
     if: ${{ github.event.pull_request != null }}
-
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Send message to Telegram
         env:
+          # Всё, что приходит от пользователя, передаём через env, а НЕ через ${{ }}
+          # внутри run. При прямой подстановке GitHub вставляет текст в исходник
+          # скрипта, и обратные кавычки из описания PR выполняются шеллом как
+          # подстановка команд — шаг падает, а описание исполняется на раннере.
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -199,9 +175,9 @@ jobs:
             action="merged"
           fi
 
-          # Описание PR уходит в rich_message.markdown как GitHub Flavored Markdown:
-          # таблицы, списки и inline-код не требуют экранирования и не дают ошибок
-          # "can't parse entities", в отличие от sendMessage с parse_mode=Markdown.
+          # Тело PR подставляется раскрытием переменной — результат повторно не
+          # разбирается шеллом, поэтому обратные кавычки внутри безопасны.
+          # Дальше это уходит в rich_message.markdown как GitHub Flavored Markdown.
           markdown="## ${REPO_NAME}: pull request #${PR_NUMBER} ${action}
 
           [**${PR_TITLE}**](https://github.com/${REPO}/pull/${PR_NUMBER})
@@ -218,17 +194,11 @@ jobs:
             "$markdown"
 
   delete:
-
     if: ${{ github.event.master_branch == null && github.event.commits == null && github.event.pull_request == null && inputs.additional-text == null && github.event.issue == null }}
-
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Send message to Telegram
         env:
@@ -239,29 +209,24 @@ jobs:
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_TO_DELETE: ${{ secrets.TELEGRAM_TO_DELETE }}
+          PARSE_MODE: ${{ inputs.parse-mode || 'Markdown' }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
           send_telegram_message \
-            "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO_DELETE" \
-            "*[${REPO_NAME}:${REF_NAME}]* by *${ACTOR}*:
+          "$TELEGRAM_TOKEN" \
+          "$TELEGRAM_TO_DELETE" \
+          "*[${REPO_NAME}:${REF_NAME}]* by [${ACTOR}](https://github.com/${ACTOR}):
 
           branch '\`${DELETED_REF}\`' is deleted" \
-            "Markdown"
+          "$PARSE_MODE"
 
   issues:
-
     if: ${{ github.event.issue != null }}
-
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Send message to Telegram
         env:
@@ -275,74 +240,55 @@ jobs:
           ACTOR: ${{ github.actor }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_TO_ISSUES: ${{ secrets.TELEGRAM_TO_ISSUES }}
+          PARSE_MODE: ${{ inputs.parse-mode || 'Markdown' }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
           send_telegram_message \
-            "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO_ISSUES" \
-            "*[${REPO_NAME}]* by [${ACTOR}](https://github.com/${ACTOR}):
+          "$TELEGRAM_TOKEN" \
+          "$TELEGRAM_TO_ISSUES" \
+          "*[${REPO_NAME}]* by [${ACTOR}](https://github.com/${ACTOR}):
 
           issue #${ISSUE_NUMBER} [${ISSUE_TITLE}](https://github.com/${REPO}/issues/${ISSUE_NUMBER}) was ${ISSUE_ACTION}" \
-            "Markdown"
+          "$PARSE_MODE"
 
   get_last_commit:
     if: ${{ inputs.additional-text != null }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Update repository
         run: git pull
 
-      - name: Get last commit information
-        id: get_commits
+      - name: Prepare commit messages
+        id: prepare
         run: |
-          COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s")
-          COMMIT_AUTHOR=$(git log -1 --pretty=format:"%an")
-          COMMIT_HASH=$(git rev-parse HEAD)
-          echo "message=$COMMIT_MESSAGE" >> $GITHUB_OUTPUT
-          echo "author=$COMMIT_AUTHOR" >> $GITHUB_OUTPUT
-          echo "hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          source ./.github/scripts/sh/utils.sh
+          source ./.github/scripts/sh/prepare_commits.sh
+          additional_text=$(echo "${{ inputs.additional-text || '' }}" | base64 -d)
+          split_text_to_array "$additional_text"
+          total_parts=$(prepare_commits_message \
+            "${{ github.event.repository.name }}" \
+            "${{ github.ref_name }}" \
+            "${{ github.actor }}" \
+            "${{ github.repository }}" \
+            "" \
+            "${{ inputs.include-header }}" \
+            "${TEXT_ARRAY[@]}")
+          echo "total_parts=${total_parts}" >> $GITHUB_OUTPUT
 
-      - name: Set outputs
-        id: set_outputs
-        env:
-          ADDITIONAL_TEXT: ${{ inputs.additional-text || '' }}
-        run: |
-          if [ "$ADDITIONAL_TEXT" != "" ]; then
-            echo "additional_text<<EOF" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "$ADDITIONAL_TEXT" >> $GITHUB_OUTPUT
-            echo "" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Send message to Telegram
-        if: ${{ steps.get_commits.outputs.hash != '' }}
-        env:
-          # Сообщение и автор коммита — пользовательский текст, только через env.
-          COMMIT_MESSAGE: ${{ steps.get_commits.outputs.message }}
-          COMMIT_AUTHOR: ${{ steps.get_commits.outputs.author }}
-          COMMIT_HASH: ${{ steps.get_commits.outputs.hash }}
-          ADDITIONAL_TEXT: ${{ steps.set_outputs.outputs.additional_text }}
-          REPO: ${{ github.repository }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          REF_NAME: ${{ github.ref_name }}
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_TO: ${{ secrets.TELEGRAM_TO }}
+      - name: Send messages to Telegram
+        if: ${{ steps.prepare.outputs.total_parts != '0' }}
         run: |
           source ./.github/scripts/sh/utils.sh
           source ./.github/scripts/sh/send_telegram.sh
-          send_telegram_message \
-            "$TELEGRAM_TOKEN" \
-            "$TELEGRAM_TO" \
-            "<b>[${REPO_NAME}:${REF_NAME}]</b> <b><a href=\"https://github.com/${REPO}/commit/${COMMIT_HASH}\">Last commit</a></b> by <b>${COMMIT_AUTHOR}</b>
-          ${ADDITIONAL_TEXT}
-          ${COMMIT_MESSAGE}" \
-            "HTML"
-
+          send_telegram_messages \
+            "${{ secrets.TELEGRAM_TOKEN }}" \
+            "${{ secrets.TELEGRAM_TO }}" \
+            "${{ steps.prepare.outputs.total_parts }}" \
+            "${{ inputs.parse-mode || 'HTML' }}"
 
   # log-github-event-goodies:
   #   name: "LOG Everything on GitHub Event"
