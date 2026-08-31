@@ -120,3 +120,35 @@ test('client error reporter includes only approved response diagnostics', async 
 		globalThis.fetch = previousFetch;
 	}
 });
+
+test('client error reporter deduplicates diagnostics with different response sizes', async () => {
+	const previousWindow = globalThis.window;
+	const previousFetch = globalThis.fetch;
+	const stored = new Map();
+	const requests = [];
+	globalThis.window = {
+		location: { pathname: '/' },
+		sessionStorage: {
+			getItem: (key) => stored.get(key) || null,
+			setItem: (key, value) => stored.set(key, value),
+		},
+	};
+	globalThis.fetch = async (_url, options) => requests.push(options);
+
+	try {
+		const context = {
+			formID: 'callback-form',
+			errorSource: 'server',
+			errorStage: 'response_parse',
+			httpStatus: 200,
+			leadPath: '/lead/test/dealer/',
+			responseKind: 'html',
+		};
+		assert.equal(await reportClientFormError({ ...context, responseBytes: 321 }), true);
+		assert.equal(await reportClientFormError({ ...context, responseBytes: 654 }), false);
+		assert.equal(requests.length, 1);
+	} finally {
+		globalThis.window = previousWindow;
+		globalThis.fetch = previousFetch;
+	}
+});
