@@ -110,6 +110,18 @@ const instrumentedFormSource = formSource
 		`from ${JSON.stringify(clientErrorReportModuleUrl)}`,
 	);
 
+test('form public API exports safe response diagnostics', async () => {
+	const previousDocument = globalThis.document;
+	globalThis.document = { getElementById: () => null };
+	try {
+		const { getFormResponseDiagnostics, reportClientFormError } = await import(toModuleUrl(instrumentedFormSource));
+		assert.equal(typeof getFormResponseDiagnostics, 'function');
+		assert.equal(typeof reportClientFormError, 'function');
+	} finally {
+		globalThis.document = previousDocument;
+	}
+});
+
 test('phoneChecker uses the same actionable format message as submit validation', async () => {
 	const previousDocument = globalThis.document;
 	const errorField = {
