@@ -77,6 +77,7 @@ const urlParamsSource = await readFile(
 const urlParamsModuleUrl = toModuleUrl(urlParamsSource);
 const clientErrorReportModuleUrl = toModuleUrl(`
 	export const reportClientFormError = async () => true;
+	export const getFormResponseDiagnostics = () => ({});
 `);
 
 const formSource = await readFile(

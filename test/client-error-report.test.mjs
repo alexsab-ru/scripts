@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-const { reportClientFormError } = await import('../lib/form/client-error-report.js');
+const { getFormResponseDiagnostics, reportClientFormError } = await import('../lib/form/client-error-report.js');
 
 test('client error reporter sends a bounded payload once per session', async () => {
 	const previousWindow = globalThis.window;
@@ -59,5 +59,64 @@ test('client error reporter rejects unknown categories', async () => {
 		}), false);
 	} finally {
 		globalThis.window = previousWindow;
+	}
+});
+
+test('response diagnostics are bounded and do not include response text', () => {
+	const previousWindow = globalThis.window;
+	globalThis.window = { location: { origin: 'https://dealer.example' } };
+	try {
+		assert.deepEqual(getFormResponseDiagnostics({
+			responseText: '<!doctype html><html>private body</html>',
+			response: { headers: { get: () => 'text/html; charset=utf-8' } },
+			url: 'https://l.alexsab.ru/lead/test/dealer/',
+		}), {
+			leadPath: '/lead/test/dealer/',
+			responseKind: 'html',
+			responseBytes: 40,
+		});
+	} finally {
+		globalThis.window = previousWindow;
+	}
+});
+
+test('client error reporter includes only approved response diagnostics', async () => {
+	const previousWindow = globalThis.window;
+	const previousFetch = globalThis.fetch;
+	const requests = [];
+	globalThis.window = {
+		location: { pathname: '/' },
+		sessionStorage: { getItem: () => null, setItem: () => {} },
+	};
+	globalThis.fetch = async (_url, options) => requests.push(options);
+
+	try {
+		await reportClientFormError({
+			formID: 'callback-form',
+			errorSource: 'server',
+			errorStage: 'response_parse',
+			httpStatus: 200,
+			leadPath: '/lead/test/dealer/',
+			responseKind: 'html',
+			responseBytes: 321,
+			responseText: '<html>private response</html>',
+		});
+		const payload = JSON.parse(requests[0].body);
+		assert.deepEqual(payload, {
+			version: 1,
+			goal: 'form_error',
+			errorSource: 'server',
+			errorStage: 'response_parse',
+			formID: 'callback-form',
+			pagePath: '/',
+			httpStatus: 200,
+			leadPath: '/lead/test/dealer/',
+			responseKind: 'html',
+			responseBytes: 321,
+		});
+		assert.equal(requests[0].body.includes('private response'), false);
+	} finally {
+		globalThis.window = previousWindow;
+		globalThis.fetch = previousFetch;
 	}
 });
