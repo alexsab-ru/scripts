@@ -108,6 +108,10 @@ const instrumentedFormSource = formSource
 	.replace(
 		"from './form/client-error-report'",
 		`from ${JSON.stringify(clientErrorReportModuleUrl)}`,
+	)
+	.replace(
+		"from './form/lead-attempt'",
+		`from ${JSON.stringify(new URL('../lib/form/lead-attempt.js', import.meta.url).href)}`,
 	);
 
 test('form public API exports safe response diagnostics', async () => {

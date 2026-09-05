@@ -15,6 +15,12 @@ common libs for websites
 pnpm i @alexsab-ru/scripts
 ```
 
+### Lead receiver `/api/leads` (0.19.0)
+
+For URLs with the exact path `/api/leads`, forms send a `request_id`. Retrying unchanged form data reuses this ID and the Calltouch result to avoid another callback. A successful response or changed data starts a new attempt. State is kept in page memory only and does not survive a reload. Legacy receiver URLs keep their existing behavior.
+
+Custom forms and ChatWidget can import `leadAttempt(owner, url, formData, callback)` and `finishLeadAttempt(owner)` from `@alexsab-ru/scripts/lead-attempt`. Use a stable owner object for each form. The helper returns `requestId` for the new receiver and the callback result as `calltouch`. Finish the attempt after a confirmed successful receiver response. HTTPS or localhost with Web Crypto API is required. The server implements delivery deduplication; this helper preserves its request key.
+
 ## Analytics module
 
 `reachGoal` and `pageView` functions push to `dataLayer` some data with goal name

@@ -1,6 +1,6 @@
 {
   "name": "@alexsab-ru/scripts",
-  "version": "0.18.1",
+  "version": "0.19.0",
   "description": "common libs for websites",
   "main": "index.js",
   "scripts": {
@@ -32,7 +32,11 @@
     "./campaign": "./lib/campaign/index.js",
     "./campaign/persist": "./lib/campaign/persist-campaign-data.js",
     "./cookie": "./lib/cookie.js",
-    "./form": "./lib/form.js"
+    "./form": "./lib/form.js",
+    "./lead-attempt": {
+      "types": "./lib/form/lead-attempt.d.ts",
+      "default": "./lib/form/lead-attempt.js"
+    }
   },
   "typesVersions": {
     "*": {
