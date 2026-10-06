@@ -23,6 +23,7 @@ const loadAnalytics = async () => {
 };
 
 const createDocument = (gtmInstalled) => ({
+	getElementById: () => null,
 	querySelectorAll(selector) {
 		if (selector === 'script' && gtmInstalled) {
 			return [{ src: 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST' }];
