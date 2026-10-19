@@ -30,6 +30,7 @@ test('client error reporter sends a bounded payload once per session', async () 
 		assert.equal(await reportClientFormError(context), true);
 		assert.equal(await reportClientFormError(context), false);
 		assert.equal(requests.length, 1);
+		assert.equal(requests[0].url, 'https://alexsab.ru/lead/client-error/');
 		assert.equal(requests[0].options.mode, 'no-cors');
 		assert.equal(requests[0].options.credentials, 'omit');
 		assert.deepEqual(JSON.parse(requests[0].options.body), {
