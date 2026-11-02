@@ -126,6 +126,52 @@ test('form public API exports safe response diagnostics', async () => {
 	}
 });
 
+test('error modal appends the dealer phone after details and clears it on success', async () => {
+	const previousDocument = globalThis.document;
+	const createNode = (tagName = '') => ({
+		tagName, children: [], attributes: {}, textContent: '',
+		appendChild(child) { this.children.push(child); },
+		setAttribute(key, value) { this.attributes[key] = value; },
+		set innerHTML(value) { this.html = value; this.children = []; },
+	});
+	const paragraph = createNode('p');
+	const iconNode = createNode('div');
+	const modal = {
+		querySelector: (selector) => selector === 'p' ? paragraph : iconNode,
+		classList: { remove() {} },
+	};
+	let phoneLink = { textContent: '+7 (846) 123-45-67', getAttribute: () => 'tel:+78461234567' };
+	globalThis.document = {
+		getElementById: () => null,
+		querySelectorAll: () => [],
+		querySelector: () => phoneLink,
+		createElement: createNode,
+		createTextNode: (value) => ({ textContent: value }),
+	};
+	try {
+		const { showMessageModal, errorIcon, errorText, successIcon, successText } = await import(toModuleUrl(instrumentedFormSource));
+		showMessageModal(modal, errorIcon, errorText, 'TypeError: Failed to fetch');
+		assert.equal(paragraph.children[1].textContent, 'TypeError: Failed to fetch');
+		assert.equal(paragraph.children.at(-2).textContent, 'Или позвоните в наш дилерский центр по телефону: ');
+		assert.equal(paragraph.children.at(-1).textContent, '+7 (846) 123-45-67');
+		assert.equal(paragraph.children.at(-1).attributes.href, 'tel:+78461234567');
+		showMessageModal(modal, successIcon, successText);
+		assert.equal(paragraph.children.length, 0);
+		phoneLink = null;
+		showMessageModal(modal, errorIcon, errorText);
+		assert.equal(paragraph.children.length, 0);
+		phoneLink = { textContent: '<img src=x onerror=alert(1)>', getAttribute: () => 'tel:+78461234567' };
+		showMessageModal(modal, errorIcon, errorText);
+		assert.equal(paragraph.children.at(-1).textContent, phoneLink.textContent);
+		assert.equal(paragraph.children.at(-1).children.length, 0);
+		phoneLink = { textContent: 'Invalid phone', getAttribute: () => 'tel:javascript:alert(1)' };
+		showMessageModal(modal, errorIcon, errorText);
+		assert.equal(paragraph.children.length, 0);
+	} finally {
+		globalThis.document = previousDocument;
+	}
+});
+
 test('phoneChecker uses the same actionable format message as submit validation', async () => {
 	const previousDocument = globalThis.document;
 	const errorField = {
